@@ -1,57 +1,67 @@
 import gradio as gr
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import load_model
 
-# Load LSTM model
-lstm_model = load_model("lstm_model.h5")
+# Load the trained LSTM model (from local file)
+lstm_model = load_model("models/lstm_model.h5")
 
 time_steps = 60
+scaler = MinMaxScaler(feature_range=(0,1))
 
-def create_sequences(data, time_steps=time_steps):
-    X = []
-    for i in range(len(data)-time_steps):
-        X.append(data[i:i+time_steps])
-    return np.array(X)
-
-def forecast(csv_file=None):
-    # Use default dataset if no file uploaded
-    if csv_file is None:
-        df = pd.read_csv("dataset.csv")  # your default CSV in repo
-    else:
+def forecast_plot(csv_file):
+    try:
+        # Read uploaded CSV
         df = pd.read_csv(csv_file.name)
+        
+        # Assume the time series column is 'Value' or first column
+        if 'Value' in df.columns:
+            ts = df['Value'].values
+        else:
+            ts = df.iloc[:,0].values
+        
+        ts_scaled = scaler.fit_transform(ts.reshape(-1,1))
+        
+        # Prepare sequences for prediction
+        X_input = []
+        for i in range(len(ts_scaled)-time_steps, len(ts_scaled)):
+            X_input.append(ts_scaled[i-time_steps:i])
+        X_input = np.array(X_input)
+        
+        # Predict next values
+        preds_scaled = lstm_model.predict(X_input)
+        preds = scaler.inverse_transform(preds_scaled)
+        
+        # Plot actual vs predicted
+        plt.figure(figsize=(10,5))
+        plt.plot(ts[-len(preds):], label="Actual", color='blue')
+        plt.plot(preds.flatten(), label="Predicted", color='red', linestyle='--')
+        plt.title("LSTM Forecast vs Actual")
+        plt.xlabel("Time")
+        plt.ylabel("Value")
+        plt.legend()
+        plt.grid(True)
+        
+        # Save plot to return
+        plt.tight_layout()
+        plot_path = "forecast_plot.png"
+        plt.savefig(plot_path)
+        plt.close()
+        
+        return plot_path
     
-    ts = df.iloc[:, 0].values  # assuming first column is the series
-    ts = ts.reshape(-1,1)
-    
-    scaler = MinMaxScaler(feature_range=(0,1))
-    ts_scaled = scaler.fit_transform(ts)
-    
-    # Prepare sequences for prediction
-    X_input = create_sequences(ts_scaled)
-    y_pred_scaled = lstm_model.predict(X_input)
-    
-    # Inverse transform predictions
-    y_pred = scaler.inverse_transform(y_pred_scaled)
-    
-    # Combine with actual values for plotting
-    actual = ts[time_steps:]
-    
-    # Return DataFrame for plotting
-    result_df = pd.DataFrame({
-        "Actual": actual.flatten(),
-        "Predicted": y_pred.flatten()
-    })
-    return result_df
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # Gradio interface
 iface = gr.Interface(
-    fn=forecast,
-    inputs=gr.File(file_types=[".csv"], label="Upload CSV (optional)"),
-    outputs=gr.LinePlot(x="index", y=["Actual","Predicted"], labels={"Actual":"Actual","Predicted":"Predicted"}, title="LSTM Forecast vs Actual"),
-    live=True,
-    description="Upload a CSV to forecast or use default dataset"
+    fn=forecast_plot,
+    inputs=gr.File(label="Upload CSV"),
+    outputs=gr.Image(label="Forecast Plot"),
+    title="LSTM Time Series Forecast",
+    description="Upload a CSV file with a single column of time series values. The app will forecast the next values and plot predicted vs actual."
 )
 
 iface.launch()
