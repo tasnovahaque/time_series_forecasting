@@ -1,7 +1,0 @@
-gradio
-pandas
-numpy
-matplotlib
-statsmodels
-scikit-learn
-tensorflow
