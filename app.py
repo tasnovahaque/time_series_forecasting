@@ -8,42 +8,32 @@ from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 from tensorflow.keras.models import load_model
 
 # Load dataset
-def load_data():
-    data = pd.read_csv("dataset.csv")   # must exist in repo
-    return data.iloc[:, 0].values
+data = pd.read_csv("dataset.csv").iloc[:, 0].values
 
-series = load_data()
-
-# Load trained LSTM model if available
-try:
-    lstm_model = load_model("models/lstm_model.h5")
-except:
-    lstm_model = None
+# Load trained LSTM model
+lstm_model = load_model("models/lstm_model.h5")
 
 def forecast(model_type):
-    train_size = int(len(series) * 0.8)
-    train, test = series[:train_size], series[train_size:]
+    train_size = int(len(data) * 0.8)
+    train, test = data[:train_size], data[train_size:]
 
     if model_type == "ARIMA":
         history = train.tolist()
         predictions = []
-        order = (1,1,1)
+        order = (1, 1, 1)
         for t in range(len(test)):
             model = ARIMA(history, order=order)
             model_fit = model.fit()
             yhat = model_fit.forecast()[0]
             predictions.append(yhat)
             history.append(test[t])
-        rmse = np.sqrt(mean_squared_error(test, predictions))
-        mape = mean_absolute_percentage_error(test, predictions)
-
-    elif model_type == "LSTM" and lstm_model:
+    elif model_type == "LSTM":
         scaler = MinMaxScaler()
-        ts_scaled = scaler.fit_transform(series.reshape(-1,1))
+        ts_scaled = scaler.fit_transform(data.reshape(-1,1))
         train_scaled = ts_scaled[:train_size]
         test_scaled = ts_scaled[train_size:]
         time_steps = 60
-        history = ts_scaled[:train_size].tolist()
+        history = train_scaled.tolist()
         predictions = []
         for i in range(len(test_scaled)):
             input_seq = np.array(history[-time_steps:]).reshape(1, time_steps, 1)
@@ -53,8 +43,6 @@ def forecast(model_type):
         predictions = np.array(predictions).reshape(-1,1)
         predictions = scaler.inverse_transform(predictions)
         test = scaler.inverse_transform(test_scaled)
-        rmse = np.sqrt(mean_squared_error(test, predictions))
-        mape = mean_absolute_percentage_error(test, predictions)
     else:
         return None
 
@@ -62,7 +50,7 @@ def forecast(model_type):
     fig, ax = plt.subplots(figsize=(12,6))
     ax.plot(test, label="Actual", color="blue")
     ax.plot(predictions, label=f"{model_type} Predictions", color="red")
-    ax.set_title(f"{model_type} Forecast vs Actual\nRMSE={rmse:.2f}, MAPE={mape:.2f}")
+    ax.set_title(f"{model_type} Forecast vs Actual")
     ax.legend()
     return fig
 
@@ -76,4 +64,3 @@ iface = gr.Interface(
 
 if __name__ == "__main__":
     iface.launch()
-
